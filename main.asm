@@ -1,45 +1,45 @@
-; ----------------------------------------------------------------------------
-; hello.asm
-;
-; This is a Win32 console program that writes "Hello, World" on one line and
-; then exits.  It uses only plain Win32 system calls from kernel32.dll, so it
-; is very instructive to study since it does not make use of a C library.
-; Because system calls from kernel32.dll are used, you need to link with
-; an import library.  You also have to specify the starting address yourself.
-;
-; Assembler: NASM
-; OS: Any Win32-based OS
-; Other libraries: Use gcc's import library libkernel32.a
-; Assemble with "nasm -fwin32 hello.asm"
-; Link with "ld -e go hello.obj -lkernel32"
-; ----------------------------------------------------------------------------
+section .data
+    message:     db 'Hello world!',10    ; 'Hello world!' plus a linefeed character
+    messageLen equ $-message      ; Length of the 'Hello world!' string
 
-	global	main
-	extern	_ExitProcess@4
-	extern	_GetStdHandle@4
-	extern	_WriteConsoleA@20
+    global main
+    extern  GetStdHandle
+    extern  WriteConsoleA
+    extern  ExitProcess
 
-        section .data
-msg:	db	'Hello, World', 10
-handle: db	0
-written:
-	db	0
+section .text
 
-	section .text
 main:
-	; handle = GetStdHandle(-11)
-	push	dword -11
-	call	_GetStdHandle@4
-	mov	[handle], eax
+    ; At _start the stack is 8 bytes misaligned because there is a return
+    ; address to the MSVCRT runtime library on the stack.
+    ; 8 bytes of temporary storage for `bytes`.
+    ; allocate 32 bytes of stack for shadow space.
+    ; 8 bytes for the 5th parameter of WriteConsole.
+    ; An additional 8 bytes for padding to make RSP 16 byte aligned.
+    sub     rsp, 8+8+8+32
+    ; At this point RSP is aligned on a 16 byte boundary and all necessary
+    ; space has been allocated.
 
-        ; WriteConsole(handle, &msg[0], 13, &written, 0)
-	push	dword 0
-    push    written
-	push	dword 13
-	push	msg
-	push	dword [handle]
-	call	_WriteConsoleA@20
+    ; hStdOut = GetStdHandle(STD_OUTPUT_HANDLE)
+    mov     ecx, -11
+    call    GetStdHandle
 
-	; ExitProcess(0)
-	push	dword 0
-	call	_ExitProcess@4
+    ; WriteFile(hstdOut, message, length(message), &bytes, 0);
+    mov     rcx, rax
+    mov     rdx, message
+    mov     r8,  messageLen
+    lea     r9,  [rsp-16]         ; Address for `bytes`
+    ; RSP-17 through RSP-48 are the 32 bytes of shadow space
+    mov     qword [rsp-56], 0     ; First stack parameter of WriteConsoleA function
+    call    WriteConsoleA
+
+    ; ExitProcess(0)
+    ;    mov     rcx, 0
+    ;    call    ExitProcess
+
+    ; alternatively you can exit by setting RAX to 0
+    ; and doing a ret
+
+    add rsp, 8+8+32+8             ; Restore the stack pointer.
+    xor eax, eax                  ; RAX = return value = 0
+    ret
